@@ -70,7 +70,7 @@ export default function AuditLogPage() {
         ...(appliedFilters.date_to     && { date_to:    appliedFilters.date_to }),
       });
 
-      const res = await fetch(`http://localhost:3001/api/audit-log?${params}`, {
+      const res = await fetch(`/api/audit-log?${params}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
