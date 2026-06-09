@@ -9,51 +9,41 @@
  * Comparison: timing-safe to prevent timing-based enumeration.
  */
 
-const crypto = require('crypto');
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import useStore from '../store';
+import MfaCodeInput from './MfaCodeInput';
 
-const CHARSET     = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-const CODE_LENGTH = 8;
-const CODE_COUNT  = 10;
+export default function VerifyMfa() {
+  const { verifyMfa, mfaLoading, mfaError, clearMfaError } = useStore();
+  const [error, setError] = useState('');
+  const navigate = useNavigate();
 
-/**
- * Generate CODE_COUNT plaintext backup codes.
- * @returns {string[]} e.g. ['AB3K-7PQX', ...]
- */
-function generateBackupCodes() {
-  const codes = [];
-  for (let i = 0; i < CODE_COUNT; i++) {
-    const raw = Array.from({ length: CODE_LENGTH }, () =>
-      CHARSET[crypto.randomInt(0, CHARSET.length)]
-    ).join('');
-    codes.push(`${raw.slice(0, 4)}-${raw.slice(4)}`);
-  }
-  return codes;
+  const handleVerify = async (code) => {
+    clearMfaError();
+    const ok = await verifyMfa(code);
+    if (ok) {
+      navigate('/');
+    } else {
+      setError('Invalid code. Please try again.');
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+      <div className="bg-white p-8 rounded-xl shadow-md w-full max-w-md">
+        <h1 className="text-2xl font-bold text-gray-900 mb-2">Two-Factor Authentication</h1>
+        <p className="text-sm text-gray-500 mb-6">
+          Enter the 6-digit code from your authenticator app.
+        </p>
+        {(error || mfaError) && (
+          <p className="text-red-600 text-sm mb-4">{error || mfaError}</p>
+        )}
+        <MfaCodeInput
+          onChange={(code) => { if (code.length === 6) handleVerify(code); }}
+          disabled={mfaLoading}
+        />
+      </div>
+    </div>
+  );
 }
-
-/**
- * Hash a backup code for DB storage.
- * Strips the dash before hashing so XXXX-XXXX and XXXXXXXX both match.
- * @param {string} code
- * @returns {string} hex SHA-256
- */
-function hashBackupCode(code) {
-  const normalised = code.replace(/-/g, '').toUpperCase();
-  return crypto.createHash('sha256').update(normalised).digest('hex');
-}
-
-/**
- * Verify a user-supplied code against a stored hash.
- * Timing-safe comparison prevents timing attacks.
- * @param {string} supplied  Raw code from user
- * @param {string} stored    Hex SHA-256 from DB
- * @returns {boolean}
- */
-function verifyBackupCode(supplied, stored) {
-  const suppliedHash = hashBackupCode(supplied);
-  const a = Buffer.from(suppliedHash, 'hex');
-  const b = Buffer.from(stored, 'hex');
-  if (a.length !== b.length) return false;
-  return crypto.timingSafeEqual(a, b);
-}
-
-module.exports = { generateBackupCodes, hashBackupCode, verifyBackupCode };

@@ -1,4 +1,4 @@
-const createAnomalySlice = (set) => ({
+const createAnomalySlice = (set, get) => ({
   anomalies: [],
   summary: [],
   loading: false,
@@ -8,7 +8,7 @@ const createAnomalySlice = (set) => ({
     set({ loading: true, error: null });
     try {
       const res = await fetch('/api/anomalies', {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+        headers: { Authorization: `Bearer ${get().token}` }
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
@@ -21,7 +21,7 @@ const createAnomalySlice = (set) => ({
   fetchSummary: async () => {
     try {
       const res = await fetch('/api/anomalies/summary', {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+        headers: { Authorization: `Bearer ${get().token}` }
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
@@ -35,7 +35,7 @@ const createAnomalySlice = (set) => ({
     try {
       await fetch(`/api/anomalies/${id}/resolve`, {
         method: 'PATCH',
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+        headers: { Authorization: `Bearer ${get().token}` }
       });
       set(state => ({
         anomalies: state.anomalies.filter(a => a.anomaly_id !== id)

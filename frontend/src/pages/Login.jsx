@@ -20,14 +20,26 @@ export default function Login() {
     e.preventDefault();
     setLoading(true);
     setError('');
+
     const { data, error: authError } = await supabase.auth.signInWithPassword({ email, password });
     if (authError) {
       setError(authError.message);
       setLoading(false);
       return;
     }
+
     setAuth(data.user, data.session.access_token);
-    navigate('/');
+
+    try {
+      const mfaRes = await fetch('/api/mfa/status', {
+        headers: { Authorization: `Bearer ${data.session.access_token}` }
+      });
+      const mfaData = await mfaRes.json();
+      navigate(mfaData.enabled ? '/verify-mfa' : '/');
+    } catch {
+      navigate('/');
+    }
+
     setLoading(false);
   };
 

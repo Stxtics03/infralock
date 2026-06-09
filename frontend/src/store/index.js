@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import createAnomalySlice from './anomalySlice';
+import createMfaSlice from './mfaSlice';
 
 const useStore = create((set, get) => ({
   user: null,
@@ -35,8 +36,8 @@ const useStore = create((set, get) => ({
     set({ datacenters: data });
   },
 
-  // Anomaly slice
-  ...createAnomalySlice(set),
+  ...createAnomalySlice(set, get),
+  ...createMfaSlice(set, get),
 }));
 
 export default useStore;

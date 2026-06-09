@@ -34,6 +34,8 @@ app.use('/api/incidents',   require('./routes/incidents'));
 app.use('/api/vault',       require('./routes/vault'));
 app.use('/api/reports',     require('./routes/reports'));
 app.use('/api/anomalies', require('./routes/anomalies'));
+app.use('/api/mfa', require('./routes/mfa'));
+
 
 app.use((err, req, res, next) => {
   console.error(err.stack);

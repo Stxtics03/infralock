@@ -1,34 +1,49 @@
 /**
  * backend/controllers/mfaController.js
- *
- * Six controller functions covering the full MFA lifecycle.
- * Uses the existing pool.js pattern (same as all other controllers).
- * All DB writes go through parameterised queries — no string interpolation.
- * Every state-changing action writes to audit_trail (zero audit gap).
  */
 
-const { authenticator } = require('otplib');
+const crypto = require('crypto');
+const otplib = require('otplib');
 const pool = require('../db/pool');
-const { encrypt, decrypt } = require('../utils/encryption');
 const { generateBackupCodes, hashBackupCode, verifyBackupCode } = require('../utils/backupCodes');
 
 const APP_NAME = 'INFRAlock';
 
-// ── internal helpers ─────────────────────────────────────────────────────────
+// AES-256-GCM encrypt/decrypt for TOTP secrets
+const ENC_KEY = crypto.scryptSync(process.env.JWT_SECRET || 'infralock', 'salt', 32);
 
-/** Check rate limit. Returns true if user is blocked. */
+function encryptSecret(text) {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', ENC_KEY, iv);
+  const ciphertext = Buffer.concat([cipher.update(text, 'utf8'), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+  return {
+    ciphertext: ciphertext.toString('hex'),
+    iv: iv.toString('hex'),
+    authTag: authTag.toString('hex')
+  };
+}
+
+function decryptSecret({ ciphertext, iv, authTag }) {
+  const decipher = crypto.createDecipheriv('aes-256-gcm', ENC_KEY, Buffer.from(iv, 'hex'));
+  decipher.setAuthTag(Buffer.from(authTag, 'hex'));
+  const text = Buffer.concat([
+    decipher.update(Buffer.from(ciphertext, 'hex')),
+    decipher.final()
+  ]);
+  return text.toString('utf8');
+}
+
 async function isRateLimited(conn, userId) {
   await conn.query('CALL sp_check_mfa_rate_limit(?, ?, @b)', [userId, '0.0.0.0']);
   const [[{ blocked }]] = await conn.query('SELECT @b AS blocked');
   return blocked === 1;
 }
 
-/** Log attempt via stored procedure (also writes to audit_trail). */
 async function logAttempt(conn, userId, ip, success) {
   await conn.query('CALL sp_log_mfa_attempt(?, ?, ?)', [userId, ip || '0.0.0.0', success ? 1 : 0]);
 }
 
-/** Audit helper for actions not covered by a trigger/procedure. */
 async function audit(conn, tableName, operation, pk, userId, newValues, ip) {
   await conn.query(
     `INSERT INTO audit_trail
@@ -38,32 +53,21 @@ async function audit(conn, tableName, operation, pk, userId, newValues, ip) {
   );
 }
 
-// ── controllers ──────────────────────────────────────────────────────────────
-
-/**
- * POST /api/mfa/setup
- * Generates a new TOTP secret, encrypts it with the existing AES-256-GCM util,
- * saves to mfa_config (enabled=FALSE), and returns the otpauth URI + base32 secret.
- * Idempotent — calling again overwrites the pending (not-yet-enabled) secret.
- */
 async function setup(req, res) {
-  const userId = req.user.id;
+  const userId = req.user.user_id;
+  const email  = req.user.email;
   const conn   = await pool.getConnection();
   try {
-    // Block if MFA is already active
     const [[row]] = await conn.query(
-      'SELECT enabled FROM mfa_config WHERE user_id = ?',
-      [userId]
+      'SELECT enabled FROM mfa_config WHERE user_id = ?', [userId]
     );
     if (row?.enabled) {
       return res.status(409).json({ error: 'MFA is already enabled.' });
     }
 
-    const secret = authenticator.generateSecret(32);
-    const otpUri = authenticator.keyuri(req.user.email, APP_NAME, secret);
-
-    // Encrypt secret at rest using existing encryption utility
-    const { ciphertext, iv, authTag } = encrypt(secret);
+    const secret = otplib.generateSecret();
+    const otpUri = otplib.generateURI({ label: email, issuer: APP_NAME, secret });
+    const { ciphertext, iv, authTag } = encryptSecret(secret);
 
     await conn.query(
       `INSERT INTO mfa_config (user_id, totp_secret, totp_iv, totp_auth_tag, enabled)
@@ -77,7 +81,7 @@ async function setup(req, res) {
     );
 
     await audit(conn, 'mfa_config', 'INSERT', userId, userId,
-      { action: 'setup_initiated', email: req.user.email }, req.ip);
+      { action: 'setup_initiated', email }, req.ip);
 
     return res.json({ otpUri, secret });
   } finally {
@@ -85,14 +89,8 @@ async function setup(req, res) {
   }
 }
 
-/**
- * POST /api/mfa/verify-setup
- * Body: { token }
- * Validates the first TOTP code, enables MFA, generates 10 backup codes.
- * Returns the plaintext backup codes — shown exactly once.
- */
 async function verifySetup(req, res) {
-  const userId = req.user.id;
+  const userId = req.user.user_id;
   const { token } = req.body;
   if (!token) return res.status(400).json({ error: 'token is required.' });
 
@@ -105,18 +103,15 @@ async function verifySetup(req, res) {
     if (!cfg) return res.status(404).json({ error: 'Run /api/mfa/setup first.' });
     if (cfg.enabled) return res.status(409).json({ error: 'MFA already enabled.' });
 
-    const secret = decrypt({ ciphertext: cfg.totp_secret, iv: cfg.totp_iv, authTag: cfg.totp_auth_tag });
-    if (!authenticator.verify({ token, secret })) {
+    const secret = decryptSecret({ ciphertext: cfg.totp_secret, iv: cfg.totp_iv, authTag: cfg.totp_auth_tag });
+    if (!otplib.verify({ token, secret })) {
       return res.status(401).json({ error: 'Invalid code. Please try again.' });
     }
 
-    // Enable MFA
     await conn.query(
-      'UPDATE mfa_config SET enabled = TRUE, enabled_at = NOW() WHERE user_id = ?',
-      [userId]
+      'UPDATE mfa_config SET enabled = TRUE, enabled_at = NOW() WHERE user_id = ?', [userId]
     );
 
-    // Issue backup codes
     const plainCodes = generateBackupCodes();
     await conn.query('DELETE FROM mfa_backup_codes WHERE user_id = ?', [userId]);
     const rows = plainCodes.map(c => [userId, hashBackupCode(c)]);
@@ -130,14 +125,8 @@ async function verifySetup(req, res) {
   }
 }
 
-/**
- * POST /api/mfa/verify
- * Body: { token } OR { backupCode }
- * Called during the login second-factor step.
- * Returns { verified: true } on success.
- */
 async function verify(req, res) {
-  const userId = req.user.id;
+  const userId = req.user.user_id;
   const { token, backupCode } = req.body;
   const ip = req.ip;
 
@@ -147,11 +136,8 @@ async function verify(req, res) {
 
   const conn = await pool.getConnection();
   try {
-    // Rate limit check
     if (await isRateLimited(conn, userId)) {
-      return res.status(429).json({
-        error: 'Too many failed attempts. Wait 15 minutes and try again.'
-      });
+      return res.status(429).json({ error: 'Too many failed attempts. Wait 15 minutes and try again.' });
     }
 
     const [[cfg]] = await conn.query(
@@ -165,11 +151,9 @@ async function verify(req, res) {
     let success = false;
 
     if (token) {
-      const secret = decrypt({ ciphertext: cfg.totp_secret, iv: cfg.totp_iv, authTag: cfg.totp_auth_tag });
-      success = authenticator.verify({ token, secret });
-
+      const secret = decryptSecret({ ciphertext: cfg.totp_secret, iv: cfg.totp_iv, authTag: cfg.totp_auth_tag });
+      success = otplib.verify({ token, secret });
     } else {
-      // Backup code — iterate unused codes with timing-safe compare
       const [codeRows] = await conn.query(
         'SELECT code_id, code_hash FROM mfa_backup_codes WHERE user_id = ? AND used = FALSE',
         [userId]
@@ -190,19 +174,13 @@ async function verify(req, res) {
 
     if (!success) return res.status(401).json({ error: 'Invalid code.' });
     return res.json({ verified: true });
-
   } finally {
     conn.release();
   }
 }
 
-/**
- * DELETE /api/mfa/disable
- * Body: { token }
- * Requires a valid TOTP code before disabling (prevents account takeover).
- */
 async function disable(req, res) {
-  const userId = req.user.id;
+  const userId = req.user.user_id;
   const { token } = req.body;
   if (!token) return res.status(400).json({ error: 'token is required to disable MFA.' });
 
@@ -214,14 +192,13 @@ async function disable(req, res) {
     );
     if (!cfg?.enabled) return res.status(400).json({ error: 'MFA is not enabled.' });
 
-    const secret = decrypt({ ciphertext: cfg.totp_secret, iv: cfg.totp_iv, authTag: cfg.totp_auth_tag });
-    if (!authenticator.verify({ token, secret })) {
+    const secret = decryptSecret({ ciphertext: cfg.totp_secret, iv: cfg.totp_iv, authTag: cfg.totp_auth_tag });
+    if (!otplib.verify({ token, secret })) {
       return res.status(401).json({ error: 'Invalid TOTP code.' });
     }
 
     await conn.query(
-      'UPDATE mfa_config SET enabled = FALSE, enabled_at = NULL WHERE user_id = ?',
-      [userId]
+      'UPDATE mfa_config SET enabled = FALSE, enabled_at = NULL WHERE user_id = ?', [userId]
     );
     await conn.query('DELETE FROM mfa_backup_codes WHERE user_id = ?', [userId]);
     await audit(conn, 'mfa_config', 'UPDATE', userId, userId, { action: 'mfa_disabled' }, req.ip);
@@ -232,30 +209,28 @@ async function disable(req, res) {
   }
 }
 
-/**
- * GET /api/mfa/status
- * Returns { mfa_status, enabled_at, backup_codes_remaining }.
- */
 async function status(req, res) {
+  const userId = req.user.user_id;
+  if (!userId) return res.json({ enabled: false });
+
   const conn = await pool.getConnection();
   try {
     const [[row]] = await conn.query(
       'SELECT mfa_status, enabled_at, backup_codes_remaining FROM v_mfa_status WHERE user_id = ?',
-      [req.user.id]
+      [userId]
     );
-    return res.json(row ?? { mfa_status: 'disabled', enabled_at: null, backup_codes_remaining: 0 });
+    return res.json({
+      enabled: row?.mfa_status === 'enabled',
+      enabled_at: row?.enabled_at ?? null,
+      backup_codes_remaining: row?.backup_codes_remaining ?? 0
+    });
   } finally {
     conn.release();
   }
 }
 
-/**
- * POST /api/mfa/backup-codes/regenerate
- * Body: { token }
- * Burns all existing codes and issues 10 new ones.
- */
 async function regenerateBackupCodes(req, res) {
-  const userId = req.user.id;
+  const userId = req.user.user_id;
   const { token } = req.body;
   if (!token) return res.status(400).json({ error: 'token is required.' });
 
@@ -267,8 +242,8 @@ async function regenerateBackupCodes(req, res) {
     );
     if (!cfg?.enabled) return res.status(400).json({ error: 'MFA is not enabled.' });
 
-    const secret = decrypt({ ciphertext: cfg.totp_secret, iv: cfg.totp_iv, authTag: cfg.totp_auth_tag });
-    if (!authenticator.verify({ token, secret })) {
+    const secret = decryptSecret({ ciphertext: cfg.totp_secret, iv: cfg.totp_iv, authTag: cfg.totp_auth_tag });
+    if (!otplib.verify({ token, secret })) {
       return res.status(401).json({ error: 'Invalid TOTP code.' });
     }
 
