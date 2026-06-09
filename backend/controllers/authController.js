@@ -33,7 +33,7 @@ async function login(req, res) {
         mfa_verified: false,
       },
       process.env.JWT_SECRET,
-      { expiresIn: mfaEnabled ? '10m' : '8h' }
+      { expiresIn: mfaEnabled ? '1h' : '8h' }
     );
 
     await conn.query(

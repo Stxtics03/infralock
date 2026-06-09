@@ -20,12 +20,13 @@ export default function VerifyMfa() {
   const navigate = useNavigate();
 
   const handleVerify = async (code) => {
+    setError('');
     clearMfaError();
-    const ok = await verifyMfa(code);
-    if (ok) {
-      navigate('/');
-    } else {
-      setError('Invalid code. Please try again.');
+    try {
+      const ok = await verifyMfa(code);
+      if (ok) navigate('/');
+    } catch (err) {
+      setError(err.message || 'Invalid code. Please try again.');
     }
   };
 

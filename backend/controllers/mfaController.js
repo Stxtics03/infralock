@@ -150,7 +150,20 @@ async function verify(req, res) {
 
     let success = false;
 
-    if (token) {
+    // ── DEMO MODE ─────────────────────────────────────────────────────────
+    // DEMO_MODE=true in .env enables showcase behaviour:
+    //   716034  → always rejected ("Invalid code" — show TOTP failure)
+    //   666666  → always rejected ("Invalid code" — show TOTP failure)
+    //   anything else → always accepted (enters dashboard)
+    const DEMO_REJECT = ['716034', '666666'];
+    if (process.env.DEMO_MODE === 'true' && token) {
+      if (DEMO_REJECT.includes(token)) {
+        await logAttempt(conn, userId, ip, false);
+        return res.status(401).json({ error: 'Invalid code.' });
+      }
+      success = true; // any other code passes in demo mode
+    } else if (token) {
+    // ── REAL TOTP VERIFICATION ─────────────────────────────────────────────
       const secret = decryptSecret({ ciphertext: cfg.totp_secret, iv: cfg.totp_iv, authTag: cfg.totp_auth_tag });
       success = speakeasy.totp.verify({ secret, encoding: 'base32', token, window: 1 });
     } else {
@@ -182,7 +195,7 @@ async function verify(req, res) {
       const fullToken = jwt.sign(
         { user_id: userRow.user_id, email: userRow.email, role: userRow.role, mfa_required: true, mfa_verified: true },
         process.env.JWT_SECRET,
-        { expiresIn: '8h' }
+        { expiresIn: cfg.enabled ? '1h' : '8h' }
       );
       return res.json({ verified: true, token: fullToken });
   } finally {
