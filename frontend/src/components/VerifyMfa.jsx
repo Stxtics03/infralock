@@ -1,125 +1,48 @@
+/**
+ * backend/utils/backupCodes.js
+ *
+ * Generates, hashes, and verifies MFA backup codes.
+ *
+ * Format: XXXX-XXXX (8 chars, dash in middle for readability)
+ * Charset avoids ambiguous characters: 0/O and 1/I omitted.
+ * Storage: SHA-256 hash only — plaintext is never written to DB.
+ * Comparison: timing-safe to prevent timing-based enumeration.
+ */
+
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useStore from '../store';
+import MfaCodeInput from './MfaCodeInput';
 
 export default function VerifyMfa() {
-  const [code, setCode]     = useState('');
-  const [error, setError]   = useState('');
-  const [loading, setLoading] = useState(false);
+  const { verifyMfa, mfaLoading, mfaError, clearMfaError } = useStore();
+  const [error, setError] = useState('');
+  const navigate = useNavigate();
 
-  const verifyMfa = useStore(s => s.verifyMfa);
-  const navigate  = useNavigate();
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
-    try {
-      await verifyMfa(code);
+  const handleVerify = async (code) => {
+    clearMfaError();
+    const ok = await verifyMfa(code);
+    if (ok) {
       navigate('/');
-    } catch (err) {
-      setError(err.message ?? 'Invalid code. Please try again.');
-    } finally {
-      setLoading(false);
+    } else {
+      setError('Invalid code. Please try again.');
     }
   };
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      background: 'var(--bg-base)',
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: 24,
-    }}>
-      {/* Brand */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 40 }}>
-        <span style={{
-          width: 36, height: 36,
-          background: 'var(--cyan)',
-          borderRadius: 6,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          color: 'var(--bg-base)',
-          fontFamily: 'var(--font-mono)',
-          fontWeight: 700,
-          fontSize: 18,
-          letterSpacing: '-0.02em',
-        }}>IL</span>
-        <span style={{
-          fontFamily: 'var(--font-mono)',
-          fontSize: 16,
-          fontWeight: 500,
-          color: 'var(--text-primary)',
-          letterSpacing: '0.1em',
-          textTransform: 'uppercase',
-        }}>INFRAlock</span>
-      </div>
-
-      <div style={{
-        background: 'var(--bg-surface)',
-        border: '1px solid var(--border)',
-        borderRadius: 12,
-        padding: '32px 36px',
-        width: '100%',
-        maxWidth: 380,
-      }}>
-        <h1 style={{ fontSize: 18, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>
-          Two-factor verification
-        </h1>
-        <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 28, lineHeight: 1.6 }}>
+    <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+      <div className="bg-white p-8 rounded-xl shadow-md w-full max-w-md">
+        <h1 className="text-2xl font-bold text-gray-900 mb-2">Two-Factor Authentication</h1>
+        <p className="text-sm text-gray-500 mb-6">
           Enter the 6-digit code from your authenticator app.
         </p>
-
-        {error && (
-          <div style={{
-            background: 'var(--red-bg)',
-            border: '1px solid var(--red-border)',
-            borderRadius: 6,
-            padding: '10px 14px',
-            marginBottom: 20,
-            fontSize: 13,
-            color: 'var(--red)',
-          }}>
-            {error}
-          </div>
+        {(error || mfaError) && (
+          <p className="text-red-600 text-sm mb-4">{error || mfaError}</p>
         )}
-
-        <form onSubmit={handleSubmit}>
-          <div className="form-group" style={{ marginBottom: 24 }}>
-            <label className="form-label" htmlFor="mfa-code">Authenticator code</label>
-            <input
-              id="mfa-code"
-              type="text"
-              inputMode="numeric"
-              pattern="[0-9]{6}"
-              maxLength={6}
-              className="form-input"
-              value={code}
-              onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-              placeholder="000000"
-              required
-              autoFocus
-              autoComplete="one-time-code"
-              style={{
-                fontFamily: 'var(--font-mono)',
-                fontSize: 22,
-                textAlign: 'center',
-                letterSpacing: '0.4em',
-              }}
-            />
-          </div>
-
-          <button
-            type="submit"
-            className="btn btn-primary"
-            disabled={loading || code.length !== 6}
-            style={{ width: '100%', justifyContent: 'center', padding: '10px 14px' }}
-          >
-            {loading ? 'Verifying…' : 'Verify'}
-          </button>
-        </form>
+        <MfaCodeInput
+          onChange={(code) => { if (code.length === 6) handleVerify(code); }}
+          disabled={mfaLoading}
+        />
       </div>
     </div>
   );

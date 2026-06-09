@@ -1,31 +1,18 @@
 import Navbar from './Navbar';
 
-/**
- * PageLayout
- * Wraps every protected page with the nav bar and a consistent main container.
- * Usage: <PageLayout eyebrow="Nodes" title="Infrastructure Nodes" actions={<button>…</button>}>
- *          <YourContent />
- *        </PageLayout>
- */
-export default function PageLayout({ children, eyebrow, title, subtitle, actions }) {
+export default function PageLayout({ eyebrow, title, subtitle, actions, children }) {
   return (
-    <div className="page-layout">
+    <div className="min-h-screen bg-gray-950 text-gray-100">
       <Navbar />
-      <main className="page-main">
-        {(eyebrow || title || actions) && (
-          <header className="page-header">
-            <div className="page-header-left">
-              {eyebrow && <p className="page-eyebrow">{eyebrow}</p>}
-              {title   && <h1 className="page-title">{title}</h1>}
-              {subtitle && <p className="page-subtitle">{subtitle}</p>}
-            </div>
-            {actions && (
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                {actions}
-              </div>
-            )}
-          </header>
-        )}
+      <main className="max-w-7xl mx-auto px-6 py-8">
+        <div className="flex items-start justify-between mb-6">
+          <div>
+            {eyebrow && <p className="text-xs font-semibold text-cyan-500 uppercase tracking-widest mb-1">{eyebrow}</p>}
+            <h1 className="text-2xl font-bold text-white">{title}</h1>
+            {subtitle && <p className="text-sm text-gray-400 mt-1">{subtitle}</p>}
+          </div>
+          {actions && <div className="flex items-center gap-3">{actions}</div>}
+        </div>
         {children}
       </main>
     </div>
