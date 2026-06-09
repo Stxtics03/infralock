@@ -104,7 +104,7 @@ async function verifySetup(req, res) {
     if (cfg.enabled) return res.status(409).json({ error: 'MFA already enabled.' });
 
     const secret = decryptSecret({ ciphertext: cfg.totp_secret, iv: cfg.totp_iv, authTag: cfg.totp_auth_tag });
-    if (!speakeasy.totp.verify({ secret, encoding: 'base32', token, window: 1 })) {
+    if (!speakeasy.totp.verify({ secret, encoding: 'base32', token, window: 4 })) {
       return res.status(401).json({ error: 'Invalid code. Please try again.' });
     }
 
@@ -165,7 +165,7 @@ async function verify(req, res) {
     } else if (token) {
     // ── REAL TOTP VERIFICATION ─────────────────────────────────────────────
       const secret = decryptSecret({ ciphertext: cfg.totp_secret, iv: cfg.totp_iv, authTag: cfg.totp_auth_tag });
-      success = speakeasy.totp.verify({ secret, encoding: 'base32', token, window: 1 });
+      success = speakeasy.totp.verify({ secret, encoding: 'base32', token, window: 4 });
     } else {
       const [codeRows] = await conn.query(
         'SELECT code_id, code_hash FROM mfa_backup_codes WHERE user_id = ? AND used = FALSE',
@@ -217,7 +217,7 @@ async function disable(req, res) {
     if (!cfg?.enabled) return res.status(400).json({ error: 'MFA is not enabled.' });
 
     const secret = decryptSecret({ ciphertext: cfg.totp_secret, iv: cfg.totp_iv, authTag: cfg.totp_auth_tag });
-    if (!speakeasy.totp.verify({ secret, encoding: 'base32', token, window: 1 })) {
+    if (!speakeasy.totp.verify({ secret, encoding: 'base32', token, window: 4 })) {
       return res.status(401).json({ error: 'Invalid TOTP code.' });
     }
 
@@ -267,7 +267,7 @@ async function regenerateBackupCodes(req, res) {
     if (!cfg?.enabled) return res.status(400).json({ error: 'MFA is not enabled.' });
 
     const secret = decryptSecret({ ciphertext: cfg.totp_secret, iv: cfg.totp_iv, authTag: cfg.totp_auth_tag });
-    if (!speakeasy.totp.verify({ secret, encoding: 'base32', token, window: 1 })) {
+    if (!speakeasy.totp.verify({ secret, encoding: 'base32', token, window: 4 })) {
       return res.status(401).json({ error: 'Invalid TOTP code.' });
     }
 
