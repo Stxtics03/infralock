@@ -19,32 +19,33 @@ export default function Dashboard() {
     fetchDatacenters();
   }, [fetchNodes, fetchIncidents, fetchDatacenters]);
 
-  const activeNodes = nodes.filter(n => n.status === 'active').length;
-  const openIncidents = incidents.length;
+  const activeNodes  = Array.isArray(nodes)      ? nodes.filter(n => n.status === 'active').length : 0;
+  const openIncidents = Array.isArray(incidents)   ? incidents.length : 0;
+  const dcCount       = Array.isArray(datacenters) ? datacenters.length : 0;
 
   return (
-    <div className="min-h-screen bg-gray-100">
+    <div className="min-h-screen bg-gray-950 text-gray-100">
       <Navbar />
       <main className="p-6 max-w-7xl mx-auto space-y-8">
         <div className="grid grid-cols-4 gap-4">
-          <StatCard label="Total Nodes" value={nodes.length} />
-          <StatCard label="Active Nodes" value={activeNodes} />
+          <StatCard label="Total Nodes"    value={Array.isArray(nodes) ? nodes.length : 0} />
+          <StatCard label="Active Nodes"   value={activeNodes} />
           <StatCard label="Open Incidents" value={openIncidents} />
-          <StatCard label="Datacenters" value={datacenters.length} />
+          <StatCard label="Datacenters"    value={dcCount} />
         </div>
 
         <section>
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Active Nodes</h2>
+          <h2 className="text-lg font-semibold text-gray-100 mb-4">Active Nodes</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {nodes.map(node => <NodeCard key={node.node_id} node={node} />)}
+            {Array.isArray(nodes) && nodes.map(node => <NodeCard key={node.node_id} node={node} />)}
           </div>
         </section>
 
         <AnomalyInsights />
 
         <section>
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Incidents</h2>
-          <IncidentKanban incidents={incidents} />
+          <h2 className="text-lg font-semibold text-gray-100 mb-4">Incidents</h2>
+          <IncidentKanban incidents={Array.isArray(incidents) ? incidents : []} />
         </section>
       </main>
     </div>
@@ -53,9 +54,9 @@ export default function Dashboard() {
 
 function StatCard({ label, value }) {
   return (
-    <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
-      <p className="text-xs text-gray-500 uppercase tracking-wide">{label}</p>
-      <p className="text-2xl font-bold text-gray-900 mt-1">{value}</p>
+    <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 shadow-sm">
+      <p className="text-xs text-gray-400 uppercase tracking-wide">{label}</p>
+      <p className="text-2xl font-bold text-cyan-400 mt-1">{value}</p>
     </div>
   );
 }

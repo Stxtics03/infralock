@@ -9,6 +9,20 @@ const useStore = create((set, get) => ({
   incidents: [],
   datacenters: [],
 
+  login: async (email, password) => {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Login failed');
+    set({ user: data.user, token: data.token });
+    return data.mfa_required;
+  },
+
+  logout: () => set({ user: null, token: null }),
+
   setAuth: (user, token) => set({ user, token }),
   clearAuth: () => set({ user: null, token: null }),
 
@@ -17,7 +31,7 @@ const useStore = create((set, get) => ({
       headers: { Authorization: `Bearer ${get().token}` }
     });
     const data = await res.json();
-    set({ nodes: data });
+    set({ nodes: Array.isArray(data) ? data : [] });
   },
 
   fetchIncidents: async () => {
@@ -25,7 +39,7 @@ const useStore = create((set, get) => ({
       headers: { Authorization: `Bearer ${get().token}` }
     });
     const data = await res.json();
-    set({ incidents: data });
+    set({ incidents: Array.isArray(data) ? data : [] });
   },
 
   fetchDatacenters: async () => {
@@ -33,7 +47,18 @@ const useStore = create((set, get) => ({
       headers: { Authorization: `Bearer ${get().token}` }
     });
     const data = await res.json();
-    set({ datacenters: data });
+    set({ datacenters: Array.isArray(data) ? data : [] });
+  },
+
+  pushMetrics: async ({ node_id, cpu_pct, memory_pct, disk_pct }) => {
+    const res = await fetch('/api/metrics', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${get().token}` },
+      body: JSON.stringify({ node_id, cpu_pct, memory_pct, disk_pct }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to push metrics');
+    return data;
   },
 
   ...createAnomalySlice(set, get),

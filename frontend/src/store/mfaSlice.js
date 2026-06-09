@@ -29,7 +29,7 @@ const createMfaSlice = (set, get) => ({
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       set({ mfaLoading: false });
-      return data; // { otpauthUrl, secret, backupCodes }
+      return data;
     } catch (err) {
       set({ mfaError: err.message, mfaLoading: false });
       return null;
@@ -47,21 +47,29 @@ const createMfaSlice = (set, get) => ({
         },
         body: JSON.stringify({ token })
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      if (data.token) {
+        get().setAuth(get().user, data.token);
+      }
       set({ mfaVerified: true, mfaEnabled: true, mfaLoading: false });
       return true;
     } catch (err) {
       set({ mfaError: err.message, mfaLoading: false });
-      return false;
+      throw err;
     }
   },
 
-  disableMfa: async () => {
+  disableMfa: async (token) => {
     set({ mfaLoading: true, mfaError: null });
     try {
       const res = await fetch('/api/mfa/disable', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${get().token}` }
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${get().token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ token })
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       set({ mfaEnabled: false, mfaVerified: false, mfaLoading: false });

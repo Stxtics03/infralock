@@ -3,7 +3,7 @@
  */
 
 const crypto = require('crypto');
-const otplib = require('otplib');
+const speakeasy = require('speakeasy');
 const pool = require('../db/pool');
 const { generateBackupCodes, hashBackupCode, verifyBackupCode } = require('../utils/backupCodes');
 
@@ -65,8 +65,8 @@ async function setup(req, res) {
       return res.status(409).json({ error: 'MFA is already enabled.' });
     }
 
-    const secret = otplib.generateSecret();
-    const otpUri = otplib.generateURI({ label: email, issuer: APP_NAME, secret });
+    const secret = speakeasy.generateSecret({ length: 20 }).base32;
+    const otpUri = speakeasy.otpauthURL({ secret, label: encodeURIComponent(email), issuer: APP_NAME, encoding: 'base32' });
     const { ciphertext, iv, authTag } = encryptSecret(secret);
 
     await conn.query(
@@ -104,7 +104,7 @@ async function verifySetup(req, res) {
     if (cfg.enabled) return res.status(409).json({ error: 'MFA already enabled.' });
 
     const secret = decryptSecret({ ciphertext: cfg.totp_secret, iv: cfg.totp_iv, authTag: cfg.totp_auth_tag });
-    if (!otplib.verify({ token, secret })) {
+    if (!speakeasy.totp.verify({ secret, encoding: 'base32', token, window: 1 })) {
       return res.status(401).json({ error: 'Invalid code. Please try again.' });
     }
 
@@ -152,7 +152,7 @@ async function verify(req, res) {
 
     if (token) {
       const secret = decryptSecret({ ciphertext: cfg.totp_secret, iv: cfg.totp_iv, authTag: cfg.totp_auth_tag });
-      success = otplib.verify({ token, secret });
+      success = speakeasy.totp.verify({ secret, encoding: 'base32', token, window: 1 });
     } else {
       const [codeRows] = await conn.query(
         'SELECT code_id, code_hash FROM mfa_backup_codes WHERE user_id = ? AND used = FALSE',
@@ -172,8 +172,19 @@ async function verify(req, res) {
 
     await logAttempt(conn, userId, ip, success);
 
-    if (!success) return res.status(401).json({ error: 'Invalid code.' });
-    return res.json({ verified: true });
+      if (!success) return res.status(401).json({ error: 'Invalid code.' });
+
+      // Re-issue full JWT with mfa_verified: true
+      const jwt = require('jsonwebtoken');
+      const [[userRow]] = await conn.query(
+        'SELECT user_id, email, role, full_name FROM users WHERE user_id = ?', [userId]
+      );
+      const fullToken = jwt.sign(
+        { user_id: userRow.user_id, email: userRow.email, role: userRow.role, mfa_required: true, mfa_verified: true },
+        process.env.JWT_SECRET,
+        { expiresIn: '8h' }
+      );
+      return res.json({ verified: true, token: fullToken });
   } finally {
     conn.release();
   }
@@ -193,7 +204,7 @@ async function disable(req, res) {
     if (!cfg?.enabled) return res.status(400).json({ error: 'MFA is not enabled.' });
 
     const secret = decryptSecret({ ciphertext: cfg.totp_secret, iv: cfg.totp_iv, authTag: cfg.totp_auth_tag });
-    if (!otplib.verify({ token, secret })) {
+    if (!speakeasy.totp.verify({ secret, encoding: 'base32', token, window: 1 })) {
       return res.status(401).json({ error: 'Invalid TOTP code.' });
     }
 
@@ -243,7 +254,7 @@ async function regenerateBackupCodes(req, res) {
     if (!cfg?.enabled) return res.status(400).json({ error: 'MFA is not enabled.' });
 
     const secret = decryptSecret({ ciphertext: cfg.totp_secret, iv: cfg.totp_iv, authTag: cfg.totp_auth_tag });
-    if (!otplib.verify({ token, secret })) {
+    if (!speakeasy.totp.verify({ secret, encoding: 'base32', token, window: 1 })) {
       return res.status(401).json({ error: 'Invalid TOTP code.' });
     }
 

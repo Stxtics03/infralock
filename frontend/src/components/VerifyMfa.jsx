@@ -30,19 +30,31 @@ export default function VerifyMfa() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-      <div className="bg-white p-8 rounded-xl shadow-md w-full max-w-md">
-        <h1 className="text-2xl font-bold text-gray-900 mb-2">Two-Factor Authentication</h1>
-        <p className="text-sm text-gray-500 mb-6">
-          Enter the 6-digit code from your authenticator app.
-        </p>
+    <div className="min-h-screen bg-gray-950 flex items-center justify-center px-4">
+      <div className="bg-gray-900 border border-gray-800 p-8 rounded-2xl shadow-2xl w-full max-w-md">
+        <div className="mb-6 text-center">
+          <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-cyan-500/10 border border-cyan-500/20 mb-4">
+            <svg className="w-7 h-7 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+            </svg>
+          </div>
+          <h1 className="text-2xl font-bold text-white">Two-Factor Auth</h1>
+          <p className="text-sm text-gray-400 mt-1">
+            Enter the 6-digit code from your authenticator app.
+          </p>
+        </div>
         {(error || mfaError) && (
-          <p className="text-red-600 text-sm mb-4">{error || mfaError}</p>
+          <p className="text-red-400 text-sm mb-4 text-center bg-red-500/10 border border-red-500/20 rounded-lg py-2 px-3">
+            {error || mfaError}
+          </p>
         )}
         <MfaCodeInput
           onChange={(code) => { if (code.length === 6) handleVerify(code); }}
           disabled={mfaLoading}
         />
+        {mfaLoading && (
+          <p className="text-center text-cyan-400 text-sm mt-4 animate-pulse">Verifying…</p>
+        )}
       </div>
     </div>
   );
