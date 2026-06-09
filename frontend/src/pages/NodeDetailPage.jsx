@@ -7,11 +7,14 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
+import Navbar from "../components/Navbar";
+import useStore from "../store";
 
 // ─── Main Page ───────────────────────────────────────────────────────────────
 export default function NodeDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const token = useStore(s => s.token);
 
   const [node, setNode] = useState(null);
   const [incidents, setIncidents] = useState([]);
@@ -22,7 +25,7 @@ export default function NodeDetailPage() {
   const [activeTab, setActiveTab] = useState("incidents");
 
   useEffect(() => {
-    const headers = { Authorization: `Bearer ${localStorage.getItem("token")}` };
+    const headers = { Authorization: `Bearer ${token}` };
 
     const fetchAll = async () => {
       setLoading(true);
@@ -82,8 +85,10 @@ export default function NodeDetailPage() {
     );
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 p-6">
-      {/* Breadcrumb */}
+    <div className="min-h-screen bg-slate-950 text-slate-100">
+      <Navbar />
+      <div className="p-6">
+      {/* Breadcrumb */}}
       <nav className="flex items-center gap-2 text-sm text-slate-500 mb-6">
         <Link to="/nodes" className="hover:text-slate-300 transition-colors">
           Nodes
@@ -142,6 +147,7 @@ export default function NodeDetailPage() {
         {activeTab === "sla" && <SlaTable slas={slas} />}
         {activeTab === "config" && <ConfigTimeline snapshots={snapshots} />}
       </div>
+      </div>
     </div>
   );
 }
@@ -175,7 +181,7 @@ function NodeHeader({ node }) {
             </div>
           </div>
           <p className="text-slate-400 text-sm mt-0.5">
-            {node?.ip_address || node?.ip || "—"} · Node #{node?.id}
+            {node?.ip_address || node?.ip || "—"} · Node #{node?.node_id || node?.id}
           </p>
         </div>
       </div>
