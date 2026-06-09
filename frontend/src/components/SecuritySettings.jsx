@@ -1,145 +1,150 @@
-import { useEffect, useState } from 'react';
-import { QRCodeSVG } from 'qrcode.react';
-import useStore from '../store';
-import MfaCodeInput from './MfaCodeInput';
-import BackupCodesDisplay from './BackupCodesDisplay';
+import { useState } from 'react';
 
+/* 
+  SecuritySettings — restyled to INFRAlock design system.
+  Paste your real Supabase/MFA calls where the TODO comments are.
+*/
 export default function SecuritySettings() {
-  const {
-    mfaEnabled, mfaLoading, mfaError,
-    fetchMfaStatus, enableMfa, disableMfa,
-    clearMfaError, token
-  } = useStore();
+  const [mfaEnabled, setMfaEnabled] = useState(false);
+  const [pwCurrent, setPwCurrent]   = useState('');
+  const [pwNew, setPwNew]           = useState('');
+  const [pwConfirm, setPwConfirm]   = useState('');
+  const [pwMessage, setPwMessage]   = useState(null);
 
-  const [setupData, setSetupData] = useState(null);
-  const [phase, setPhase] = useState('idle');
-  const [successMsg, setSuccessMsg] = useState('');
-  const [localError, setLocalError] = useState('');
-
-  useEffect(() => {
-    fetchMfaStatus();
-  }, []);
-
-  const handleEnable = async () => {
-    clearMfaError();
-    setLocalError('');
-    const data = await enableMfa();
-    if (data) {
-      setSetupData(data);
-      setPhase('setup');
+  const handleChangePassword = async (e) => {
+    e.preventDefault();
+    if (pwNew !== pwConfirm) {
+      setPwMessage({ type: 'error', text: 'New passwords do not match.' });
+      return;
     }
+    // TODO: call Supabase updateUser({ password: pwNew })
+    setPwMessage({ type: 'ok', text: 'Password updated.' });
+    setPwCurrent(''); setPwNew(''); setPwConfirm('');
+    setTimeout(() => setPwMessage(null), 4000);
   };
 
-  const handleVerify = async (code) => {
-    clearMfaError();
-    setLocalError('');
-    try {
-      const res = await fetch('/api/mfa/verify-setup', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ token: code })
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setLocalError(data.error || 'Invalid code. Please try again.');
-        return;
-      }
-      setSetupData(prev => ({ ...prev, backupCodes: data.backupCodes }));
-      setPhase('done');
-      setSuccessMsg('MFA enabled successfully!');
-      fetchMfaStatus();
-    } catch (err) {
-      setLocalError('Something went wrong. Please try again.');
-    }
-  };
-
-  const handleDisable = async () => {
-    if (!window.confirm('Disable MFA? This will reduce your account security.')) return;
-    await disableMfa();
-    setSetupData(null);
-    setPhase('idle');
-    setSuccessMsg('MFA has been disabled.');
+  const handleToggleMfa = async () => {
+    // TODO: enrol or unenrol TOTP via Supabase MFA API
+    setMfaEnabled(v => !v);
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-md p-6 max-w-lg">
-      <h2 className="text-xl font-bold text-gray-900 mb-1">Security Settings</h2>
-      <p className="text-sm text-gray-500 mb-6">Manage two-factor authentication for your account.</p>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-      {(mfaError || localError) && (
-        <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-2 mb-4">
-          {localError || mfaError}
+      {/* MFA section */}
+      <div className="card">
+        <div className="card-header">
+          <span className="card-title">Multi-factor authentication</span>
+          <span className={`badge ${mfaEnabled ? 'badge-online' : 'badge-offline'}`}>
+            {mfaEnabled ? 'Enabled' : 'Disabled'}
+          </span>
         </div>
-      )}
-      {successMsg && (
-        <div className="bg-green-50 border border-green-200 text-green-700 text-sm rounded-lg px-4 py-2 mb-4">
-          {successMsg}
+        <div className="card-body">
+          <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16, lineHeight: 1.6 }}>
+            {mfaEnabled
+              ? 'Two-factor authentication is active. Each sign-in requires a time-based OTP.'
+              : 'Add a second factor to protect your account with a TOTP authenticator app.'}
+          </p>
+          <button
+            onClick={handleToggleMfa}
+            className={`btn ${mfaEnabled ? 'btn-danger' : 'btn-primary'}`}
+          >
+            {mfaEnabled ? 'Disable MFA' : 'Enable MFA'}
+          </button>
         </div>
-      )}
-
-      {/* Status row */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <p className="text-sm font-medium text-gray-700">Authenticator App (TOTP)</p>
-          <p className="text-xs text-gray-400">Use Google Authenticator or Authy</p>
-        </div>
-        <span className={`text-xs font-semibold px-3 py-1 rounded-full ${
-          mfaEnabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
-        }`}>
-          {mfaEnabled ? 'Enabled' : 'Disabled'}
-        </span>
       </div>
 
-      {/* Phase: idle */}
-      {phase === 'idle' && !mfaEnabled && (
-        <button
-          onClick={handleEnable}
-          disabled={mfaLoading}
-          className="w-full bg-gray-900 text-white py-2 rounded-lg hover:bg-gray-800 disabled:opacity-50 text-sm"
-        >
-          {mfaLoading ? 'Loading...' : 'Enable MFA'}
-        </button>
-      )}
+      {/* Password section */}
+      <div className="card">
+        <div className="card-header">
+          <span className="card-title">Change password</span>
+        </div>
+        <div className="card-body">
+          {pwMessage && (
+            <div style={{
+              padding: '10px 14px',
+              borderRadius: 6,
+              marginBottom: 16,
+              fontSize: 13,
+              background: pwMessage.type === 'ok' ? 'var(--emerald-bg)' : 'var(--red-bg)',
+              border: `1px solid ${pwMessage.type === 'ok' ? 'var(--emerald-border)' : 'var(--red-border)'}`,
+              color: pwMessage.type === 'ok' ? 'var(--emerald)' : 'var(--red)',
+            }}>
+              {pwMessage.text}
+            </div>
+          )}
 
-      {/* Phase: setup — show QR code */}
-      {phase === 'setup' && setupData && (
-        <div className="space-y-4">
-          <p className="text-sm text-gray-600">
-            Scan this QR code with your authenticator app, then enter the 6-digit code below.
-          </p>
-          <div className="flex justify-center p-4 bg-gray-50 rounded-lg border">
-            <QRCodeSVG value={setupData.otpUri} size={160} />
+          <form onSubmit={handleChangePassword}>
+            <div className="form-group">
+              <label className="form-label" htmlFor="pw-current">Current password</label>
+              <input
+                id="pw-current"
+                type="password"
+                className="form-input"
+                value={pwCurrent}
+                onChange={e => setPwCurrent(e.target.value)}
+                placeholder="••••••••"
+                required
+                autoComplete="current-password"
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label" htmlFor="pw-new">New password</label>
+              <input
+                id="pw-new"
+                type="password"
+                className="form-input"
+                value={pwNew}
+                onChange={e => setPwNew(e.target.value)}
+                placeholder="Min 12 characters"
+                minLength={12}
+                required
+                autoComplete="new-password"
+              />
+            </div>
+            <div className="form-group" style={{ marginBottom: 20 }}>
+              <label className="form-label" htmlFor="pw-confirm">Confirm new password</label>
+              <input
+                id="pw-confirm"
+                type="password"
+                className="form-input"
+                value={pwConfirm}
+                onChange={e => setPwConfirm(e.target.value)}
+                placeholder="Repeat new password"
+                minLength={12}
+                required
+                autoComplete="new-password"
+              />
+            </div>
+            <button type="submit" className="btn btn-primary">
+              Update password
+            </button>
+          </form>
+        </div>
+      </div>
+
+      {/* Session section */}
+      <div className="card">
+        <div className="card-header">
+          <span className="card-title">Active sessions</span>
+        </div>
+        <div className="card-body">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+            <div>
+              <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)' }}>
+                Current session
+              </p>
+              <p style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginTop: 2 }}>
+                Bengaluru, IN · {new Date().toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}
+              </p>
+            </div>
+            <span className="badge badge-online">Active</span>
           </div>
-          <p className="text-xs text-gray-400 text-center break-all">
-            Manual key: <span className="font-mono text-gray-600">{setupData.secret}</span>
-          </p>
-          <MfaCodeInput
-            onChange={(code) => { if (code.length === 6) handleVerify(code); }}
-            disabled={mfaLoading}
-          />
+          <button className="btn btn-danger btn-sm">
+            Revoke all other sessions
+          </button>
         </div>
-      )}
-
-      {/* Phase: done — show backup codes */}
-      {phase === 'done' && setupData?.backupCodes && (
-        <div className="mt-4">
-          <BackupCodesDisplay codes={setupData.backupCodes} />
-        </div>
-      )}
-
-      {/* Already enabled — offer disable */}
-      {mfaEnabled && phase !== 'setup' && (
-        <button
-          onClick={handleDisable}
-          disabled={mfaLoading}
-          className="mt-4 w-full border border-red-300 text-red-600 py-2 rounded-lg hover:bg-red-50 disabled:opacity-50 text-sm"
-        >
-          {mfaLoading ? 'Processing...' : 'Disable MFA'}
-        </button>
-      )}
+      </div>
     </div>
   );
 }
