@@ -14,7 +14,7 @@ router.get('/', verifyToken, async (req, res) => {
     const params = [];
 
     if (user) {
-      conditions.push('performed_by LIKE ?');
+      conditions.push('a.performed_by LIKE ?');
       params.push(`%${user}%`);
     }
     if (table_name) {
@@ -36,17 +36,20 @@ router.get('/', verifyToken, async (req, res) => {
       params.push(to.toISOString().slice(0, 19).replace('T', ' '));
     }
 
-    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const where = conditions.length ? `WHERE ${conditions.map(c => c.includes('performed_by') ? c : c).join(' AND ')}` : '';
 
     const [[{ total }]] = await pool.query(
-      `SELECT COUNT(*) AS total FROM audit_trail ${where}`, params
+      `SELECT COUNT(*) AS total FROM audit_trail a LEFT JOIN users u ON u.user_id = a.performed_by ${where}`, params
     );
 
     const [rows] = await pool.query(
-      `SELECT audit_id, table_name, operation, record_pk,
-              performed_by, performed_at, old_values, new_values, ip_address
-       FROM audit_trail ${where}
-       ORDER BY performed_at DESC
+      `SELECT a.audit_id, a.table_name, a.operation, a.record_pk,
+              COALESCE(u.email, a.performed_by) AS performed_by,
+              a.performed_at, a.old_values, a.new_values, a.ip_address
+       FROM audit_trail a
+       LEFT JOIN users u ON u.user_id = a.performed_by
+       ${where}
+       ORDER BY a.performed_at DESC
        LIMIT ? OFFSET ?`,
       [...params, limit, offset]
     );

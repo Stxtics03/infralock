@@ -4,6 +4,7 @@ import useStore from '../store';
 const links = [
   { to: '/',          label: 'Dashboard' },
   { to: '/nodes',     label: 'Nodes'     },
+  { to: '/projects',  label: 'Projects'  },
   { to: '/incidents', label: 'Incidents' },
   { to: '/slas',      label: 'SLAs'      },
   { to: '/vault',     label: 'Vault'     },
