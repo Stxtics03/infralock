@@ -27,8 +27,8 @@ async function login(req, res) {
     const token = jwt.sign(
       {
         user_id: user.user_id,
-        email: user.email,
-        role: user.role,
+        email:   user.email,
+        role:    user.role,
         mfa_required: mfaEnabled,
         mfa_verified: false,
       },
@@ -44,9 +44,9 @@ async function login(req, res) {
       token,
       mfa_required: mfaEnabled,
       user: {
-        user_id: user.user_id,
-        email: user.email,
-        role: user.role,
+        user_id:   user.user_id,
+        email:     user.email,
+        role:      user.role,
         full_name: user.full_name,
       }
     });
@@ -59,4 +59,39 @@ async function me(req, res) {
   return res.json({ user: req.user });
 }
 
-module.exports = { login, me };
+async function changePassword(req, res) {
+  const { current_password, new_password } = req.body;
+
+  if (!current_password || !new_password)
+    return res.status(400).json({ error: 'current_password and new_password are required.' });
+
+  if (new_password.length < 8)
+    return res.status(400).json({ error: 'New password must be at least 8 characters.' });
+
+  if (current_password === new_password)
+    return res.status(400).json({ error: 'New password must differ from current password.' });
+
+  const conn = await pool.getConnection();
+  try {
+    const [[user]] = await conn.query(
+      'SELECT * FROM users WHERE user_id = ?', [req.user.user_id]
+    );
+    if (!user)
+      return res.status(404).json({ error: 'User not found.' });
+
+    const valid = await bcrypt.compare(current_password, user.password_hash);
+    if (!valid)
+      return res.status(401).json({ error: 'Current password is incorrect.' });
+
+    const hash = await bcrypt.hash(new_password, 12);
+    await conn.query(
+      'UPDATE users SET password_hash = ? WHERE user_id = ?', [hash, user.user_id]
+    );
+
+    return res.json({ message: 'Password updated successfully.' });
+  } finally {
+    conn.release();
+  }
+}
+
+module.exports = { login, me, changePassword };
