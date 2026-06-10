@@ -14,9 +14,9 @@ export default function MfaCodeInput({ onChange, disabled = false, hasError = fa
   const [digits, setDigits] = useState(Array(6).fill(''));
   const refs = useRef([]);
 
-  const base    = 'w-11 h-14 border-2 rounded-lg text-center text-xl font-mono font-bold outline-none transition-colors disabled:opacity-50';
-  const normal  = 'border-zinc-300 focus:border-indigo-500 bg-white';
-  const errored = 'border-red-400 bg-red-50';
+  const base    = 'w-11 h-14 border-2 rounded-lg text-center text-xl font-mono font-bold outline-none transition-colors disabled:opacity-50 text-gray-900';
+  const normal  = 'border-zinc-600 focus:border-indigo-500 bg-gray-800 text-white caret-white';
+  const errored = 'border-red-400 bg-red-50 text-gray-900';
 
   function update(index, value) {
     const digit = value.replace(/\D/g, '').slice(-1);

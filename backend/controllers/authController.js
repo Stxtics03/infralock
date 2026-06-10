@@ -1,6 +1,13 @@
 const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
-const pool = require('../db/pool');
+const jwt    = require('jsonwebtoken');
+const pool   = require('../db/pool');
+const { createClient } = require('@supabase/supabase-js');
+
+const supabaseAdmin = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_KEY,
+  { auth: { autoRefreshToken: false, persistSession: false } }
+);
 
 async function login(req, res) {
   const { email, password } = req.body;
@@ -26,9 +33,9 @@ async function login(req, res) {
 
     const token = jwt.sign(
       {
-        user_id: user.user_id,
-        email:   user.email,
-        role:    user.role,
+        user_id:      user.user_id,
+        email:        user.email,
+        role:         user.role,
         mfa_required: mfaEnabled,
         mfa_verified: false,
       },
@@ -94,4 +101,81 @@ async function changePassword(req, res) {
   }
 }
 
-module.exports = { login, me, changePassword };
+async function inviteUser(req, res) {
+  // Only ADMINs can invite
+  if (req.user.role !== 'ADMIN')
+    return res.status(403).json({ error: 'Only admins can invite users.' });
+
+  const { full_name, email, role } = req.body;
+
+  if (!full_name || !email)
+    return res.status(400).json({ error: 'full_name and email are required.' });
+
+  const allowedRoles = ['ADMIN', 'ENGINEER', 'VIEWER'];
+  const assignedRole = allowedRoles.includes(role) ? role : 'ENGINEER';
+
+  // Temp password handed to admin to share with new user
+  const tempPassword = `Infralock@${Math.floor(100000 + Math.random() * 900000)}`;
+
+  const conn = await pool.getConnection();
+  try {
+    // Check duplicate in local DB
+    const [[existing]] = await conn.query(
+      'SELECT user_id FROM users WHERE email = ?', [email]
+    );
+    if (existing)
+      return res.status(409).json({ error: 'A user with this email already exists.' });
+
+    // Create in Supabase
+    const { data: sbData, error: sbError } = await supabaseAdmin.auth.admin.createUser({
+      email,
+      password:      tempPassword,
+      email_confirm: true,
+      user_metadata: { full_name },
+    });
+
+    if (sbError)
+      return res.status(500).json({ error: `Supabase error: ${sbError.message}` });
+
+    const supabase_uid = sbData.user.id;
+
+    // Hash temp password for local DB
+    const hash = await bcrypt.hash(tempPassword, 12);
+
+    // Insert into local users table
+    const [result] = await conn.query(
+      `INSERT INTO users (supabase_uid, full_name, email, role, status, password_hash)
+       VALUES (?, ?, ?, ?, 'active', ?)`,
+      [supabase_uid, full_name, email, assignedRole, hash]
+    );
+
+    const newUserId = result.insertId;
+
+    // Audit trail
+    await conn.query(
+      `INSERT INTO audit_trail (table_name, operation, record_pk, performed_by, performed_at, new_values, ip_address)
+       VALUES ('users', 'INSERT', ?, ?, NOW(), ?, ?)`,
+      [
+        String(newUserId),
+        req.user.email,
+        JSON.stringify({ full_name, email, role: assignedRole }),
+        req.ip || '0.0.0.0',
+      ]
+    );
+
+    return res.status(201).json({
+      message:       'User created successfully.',
+      temp_password: tempPassword,
+      user: {
+        user_id:   newUserId,
+        full_name,
+        email,
+        role:      assignedRole,
+      }
+    });
+  } finally {
+    conn.release();
+  }
+}
+
+module.exports = { login, me, changePassword, inviteUser };

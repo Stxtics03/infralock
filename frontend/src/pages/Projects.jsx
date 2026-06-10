@@ -15,7 +15,7 @@ function statusColor(status) {
 }
 
 function UsageBar({ label, used, allocated, unit }) {
-  const pct     = allocated > 0 ? Math.min((used / allocated) * 100, 100) : 0;
+  const pct      = allocated > 0 ? Math.min((used / allocated) * 100, 100) : 0;
   const barColor = pct >= 90 ? 'bg-red-500' : pct >= 70 ? 'bg-yellow-500' : 'bg-cyan-500';
   return (
     <div>
@@ -57,6 +57,8 @@ function AllocationSlider({ label, value, min = 0, max, step = 1, unit, onChange
 // ----------------------------------------------------------------
 export default function Projects() {
   const token = useStore(s => s.token);
+  const nodes = useStore(s => s.nodes);
+  const fetchNodes = useStore(s => s.fetchNodes);
 
   const [projects, setProjects]     = useState([]);
   const [loading,  setLoading]      = useState(true);
@@ -76,7 +78,12 @@ export default function Projects() {
   const [createBusy, setCreateBusy] = useState(false);
 
   // Nodes modal
-  const [nodesModal, setNodesModal] = useState(null); // project object with nodes[]
+  const [nodesModal, setNodesModal] = useState(null);
+
+  // Assign node modal
+  const [assignModal, setAssignModal] = useState(null); // project object
+  const [assignNodeId, setAssignNodeId] = useState('');
+  const [assignBusy, setAssignBusy] = useState(false);
 
   const showToast = (msg, ok = true) => {
     setToast({ msg, ok });
@@ -98,7 +105,10 @@ export default function Projects() {
     }
   };
 
-  useEffect(() => { fetchProjects(); }, []);
+  useEffect(() => {
+    fetchProjects();
+    fetchNodes();
+  }, []);
 
   // ---- Create project ----
   const handleCreate = async () => {
@@ -111,10 +121,7 @@ export default function Projects() {
       const res  = await fetch('/api/projects', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body:    JSON.stringify({
-          ...createForm,
-          rack_id: createForm.rack_id || null,
-        }),
+        body:    JSON.stringify({ ...createForm, rack_id: createForm.rack_id || null }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to create project');
@@ -175,7 +182,6 @@ export default function Projects() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to unassign');
       showToast(`Node "${hostname}" removed from project`);
-      // Refresh nodes modal
       setNodesModal(prev => ({
         ...prev,
         nodes: prev.nodes.filter(n => n.node_id !== nodeId),
@@ -185,6 +191,39 @@ export default function Projects() {
       showToast(err.message, false);
     }
   };
+
+  // ---- Open assign modal ----
+  const openAssignModal = (project) => {
+    setAssignNodeId('');
+    setAssignModal(project);
+  };
+
+  // ---- Assign node ----
+  const handleAssign = async () => {
+    if (!assignNodeId) return;
+    setAssignBusy(true);
+    try {
+      const res = await fetch(`/api/projects/${assignModal.project_id}/assign-node`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body:    JSON.stringify({ node_id: Number(assignNodeId) }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to assign node');
+      const node = (Array.isArray(nodes) ? nodes : []).find(n => n.node_id === Number(assignNodeId));
+      showToast(`✔ Node "${node?.hostname ?? assignNodeId}" assigned to "${assignModal.project_name}"`);
+      setAssignModal(null);
+      fetchProjects();
+      fetchNodes();
+    } catch (err) {
+      showToast(err.message, false);
+    } finally {
+      setAssignBusy(false);
+    }
+  };
+
+  // Nodes not already assigned to any project
+  const unassignedNodes = (Array.isArray(nodes) ? nodes : []).filter(n => !n.project_id);
 
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100">
@@ -234,6 +273,7 @@ export default function Projects() {
                 project={p}
                 onDelete={handleDelete}
                 onViewNodes={openNodesModal}
+                onAssignNode={openAssignModal}
               />
             ))}
           </div>
@@ -250,7 +290,6 @@ export default function Projects() {
             <p className="text-sm text-gray-400 mb-6">Set a name and define resource allocations.</p>
 
             <div className="space-y-4">
-              {/* Name */}
               <div>
                 <label className="block text-sm text-gray-300 mb-1.5">Project Name <span className="text-red-400">*</span></label>
                 <input
@@ -261,8 +300,6 @@ export default function Projects() {
                   className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500 transition-colors"
                 />
               </div>
-
-              {/* Description */}
               <div>
                 <label className="block text-sm text-gray-300 mb-1.5">Description</label>
                 <textarea
@@ -273,8 +310,6 @@ export default function Projects() {
                   className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500 transition-colors resize-none"
                 />
               </div>
-
-              {/* Rack ID */}
               <div>
                 <label className="block text-sm text-gray-300 mb-1.5">Rack ID <span className="text-gray-500">(optional)</span></label>
                 <input
@@ -285,7 +320,6 @@ export default function Projects() {
                   className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-cyan-500 transition-colors"
                 />
               </div>
-
               <div className="border-t border-gray-800 pt-4 space-y-5">
                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest">Resource Allocations</p>
                 <AllocationSlider
@@ -304,16 +338,75 @@ export default function Projects() {
             </div>
 
             <div className="flex gap-3 mt-8">
-              <button
-                onClick={() => setShowCreate(false)}
+              <button onClick={() => setShowCreate(false)}
+                className="flex-1 py-2.5 rounded-xl border border-gray-700 text-gray-400 hover:text-white hover:border-gray-500 transition-colors text-sm font-medium">
+                Cancel
+              </button>
+              <button onClick={handleCreate} disabled={createBusy}
+                className="flex-1 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white text-sm font-semibold transition-colors">
+                {createBusy ? 'Creating…' : 'Create Project'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ---- Assign Node Modal ---- */}
+      {assignModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4"
+          onClick={e => e.target === e.currentTarget && setAssignModal(null)}>
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl w-full max-w-md p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-white">Assign Node</h2>
+              <button onClick={() => setAssignModal(null)} className="text-gray-500 hover:text-white transition-colors">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <p className="text-sm text-gray-400 mb-5">
+              Assign a node to <span className="text-cyan-400 font-semibold">{assignModal.project_name}</span>
+            </p>
+
+            {unassignedNodes.length === 0 ? (
+              <p className="text-sm text-gray-500 py-4 text-center">All nodes are already assigned to projects.</p>
+            ) : (
+              <div className="space-y-2 max-h-64 overflow-y-auto mb-6">
+                {unassignedNodes.map(node => (
+                  <button
+                    key={node.node_id}
+                    onClick={() => setAssignNodeId(String(node.node_id))}
+                    className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border text-left transition-colors
+                      ${assignNodeId === String(node.node_id)
+                        ? 'border-cyan-500/50 bg-cyan-500/10'
+                        : 'border-gray-700 bg-gray-800 hover:border-gray-600'}`}>
+                    <div>
+                      <p className="text-sm font-mono font-semibold text-white">{node.hostname}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        {node.cpu_cores} cores · {node.ram_gb} GB RAM · {node.storage_tb} TB
+                      </p>
+                    </div>
+                    {assignNodeId === String(node.node_id) && (
+                      <svg className="w-4 h-4 text-cyan-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div className="flex gap-3">
+              <button onClick={() => setAssignModal(null)}
                 className="flex-1 py-2.5 rounded-xl border border-gray-700 text-gray-400 hover:text-white hover:border-gray-500 transition-colors text-sm font-medium">
                 Cancel
               </button>
               <button
-                onClick={handleCreate}
-                disabled={createBusy}
+                onClick={handleAssign}
+                disabled={assignBusy || !assignNodeId || unassignedNodes.length === 0}
                 className="flex-1 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white text-sm font-semibold transition-colors">
-                {createBusy ? 'Creating…' : 'Create Project'}
+                {assignBusy ? 'Assigning…' : 'Assign Node'}
               </button>
             </div>
           </div>
@@ -331,8 +424,7 @@ export default function Projects() {
                 <h2 className="text-lg font-bold text-white">{nodesModal.project_name}</h2>
                 <p className="text-sm text-gray-400">{nodesModal.nodes?.length ?? 0} assigned node{nodesModal.nodes?.length !== 1 ? 's' : ''}</p>
               </div>
-              <button onClick={() => setNodesModal(null)}
-                className="text-gray-500 hover:text-white transition-colors">
+              <button onClick={() => setNodesModal(null)} className="text-gray-500 hover:text-white transition-colors">
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
@@ -371,7 +463,7 @@ export default function Projects() {
 // ----------------------------------------------------------------
 // Project Card
 // ----------------------------------------------------------------
-function ProjectCard({ project, onDelete, onViewNodes }) {
+function ProjectCard({ project, onDelete, onViewNodes, onAssignNode }) {
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5 flex flex-col gap-4 hover:border-gray-700 transition-colors">
 
@@ -397,24 +489,9 @@ function ProjectCard({ project, onDelete, onViewNodes }) {
 
       {/* Usage bars */}
       <div className="space-y-3">
-        <UsageBar
-          label="RAM"
-          used={project.used_ram_gb}
-          allocated={project.allocated_ram_gb}
-          unit=" GB"
-        />
-        <UsageBar
-          label="CPU Cores"
-          used={project.used_cpu_cores}
-          allocated={project.allocated_cpu_cores}
-          unit=""
-        />
-        <UsageBar
-          label="Storage"
-          used={Number(project.used_storage_tb)}
-          allocated={Number(project.allocated_storage_tb)}
-          unit=" TB"
-        />
+        <UsageBar label="RAM"      used={project.used_ram_gb}     allocated={project.allocated_ram_gb}     unit=" GB" />
+        <UsageBar label="CPU Cores" used={project.used_cpu_cores} allocated={project.allocated_cpu_cores}  unit="" />
+        <UsageBar label="Storage"  used={Number(project.used_storage_tb)} allocated={Number(project.allocated_storage_tb)} unit=" TB" />
       </div>
 
       {/* Stats row */}
@@ -431,6 +508,12 @@ function ProjectCard({ project, onDelete, onViewNodes }) {
           className="flex-1 py-2 rounded-xl bg-cyan-600/10 border border-cyan-600/20 text-cyan-400
             text-xs font-medium hover:bg-cyan-600/20 hover:border-cyan-500/40 transition-colors">
           View Nodes
+        </button>
+        <button
+          onClick={() => onAssignNode(project)}
+          className="flex-1 py-2 rounded-xl bg-emerald-600/10 border border-emerald-600/20 text-emerald-400
+            text-xs font-medium hover:bg-emerald-600/20 hover:border-emerald-500/40 transition-colors">
+          + Assign Node
         </button>
         <button
           onClick={() => onDelete(project)}

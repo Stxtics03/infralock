@@ -8,6 +8,11 @@ const EMPTY_REG = {
   node_type: 'web',
   status: 'active',
   location: '',
+  rack_id: '',
+  cpu_cores: 4,
+  ram_gb: 16,
+  storage_tb: 1,
+  os: '',
 };
 
 export default function Nodes() {
@@ -58,7 +63,7 @@ export default function Nodes() {
 
   // ── Register Node ──────────────────────────────────────────────────────────
   const registerNode = async () => {
-    if (!regForm.hostname.trim() || !regForm.ip_address.trim()) return;
+    if (!regForm.hostname.trim() || !regForm.ip_address.trim() || !regForm.rack_id) return;
     setBusy(true);
     try {
       const res = await fetch('/api/nodes', {
@@ -173,7 +178,7 @@ export default function Nodes() {
       {regModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4"
           onClick={e => e.target === e.currentTarget && setRegModal(false)}>
-          <div className="bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl w-full max-w-lg p-6">
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-5">
               <h2 className="text-lg font-bold text-white">Register Node</h2>
               <button onClick={() => setRegModal(false)} className="text-gray-500 hover:text-gray-300">
@@ -182,6 +187,7 @@ export default function Nodes() {
             </div>
 
             <div className="space-y-4">
+              {/* Hostname + IP */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">
@@ -209,6 +215,7 @@ export default function Nodes() {
                 </div>
               </div>
 
+              {/* Node Type + Status */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">
@@ -244,6 +251,72 @@ export default function Nodes() {
                 </div>
               </div>
 
+              {/* CPU + RAM + Storage */}
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">
+                    CPU Cores <span className="text-cyan-400">*</span>
+                  </label>
+                  <input
+                    type="number" min={1}
+                    value={regForm.cpu_cores}
+                    onChange={e => setRegForm(f => ({ ...f, cpu_cores: Number(e.target.value) }))}
+                    className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-cyan-500/50"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">
+                    RAM (GB) <span className="text-cyan-400">*</span>
+                  </label>
+                  <input
+                    type="number" min={1}
+                    value={regForm.ram_gb}
+                    onChange={e => setRegForm(f => ({ ...f, ram_gb: Number(e.target.value) }))}
+                    className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-cyan-500/50"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">
+                    Storage (TB) <span className="text-cyan-400">*</span>
+                  </label>
+                  <input
+                    type="number" min={0} step={0.1}
+                    value={regForm.storage_tb}
+                    onChange={e => setRegForm(f => ({ ...f, storage_tb: Number(e.target.value) }))}
+                    className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-cyan-500/50"
+                  />
+                </div>
+              </div>
+
+              {/* Rack ID + OS */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">
+                    Rack ID <span className="text-cyan-400">*</span>
+                  </label>
+                  <input
+                    type="number" min={1}
+                    value={regForm.rack_id}
+                    onChange={e => setRegForm(f => ({ ...f, rack_id: Number(e.target.value) }))}
+                    placeholder="1"
+                    className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-cyan-500/50"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">
+                    OS
+                  </label>
+                  <input
+                    type="text"
+                    value={regForm.os}
+                    onChange={e => setRegForm(f => ({ ...f, os: e.target.value }))}
+                    placeholder="Ubuntu 22.04"
+                    className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-cyan-500/50"
+                  />
+                </div>
+              </div>
+
+              {/* Location */}
               <div>
                 <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">
                   Location / Region
@@ -265,7 +338,7 @@ export default function Nodes() {
               </button>
               <button
                 onClick={registerNode}
-                disabled={busy || !regForm.hostname.trim() || !regForm.ip_address.trim()}
+                disabled={busy || !regForm.hostname.trim() || !regForm.ip_address.trim() || !regForm.rack_id}
                 className="flex-1 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white text-sm font-semibold transition-colors">
                 {busy ? 'Registering…' : 'Register Node'}
               </button>
@@ -310,6 +383,15 @@ function NodeCard({ node, onPushMetrics }) {
           <span className="truncate">{node.location}</span>
         )}
       </div>
+
+      {/* Hardware specs */}
+      {(node.cpu_cores || node.ram_gb || node.storage_tb) && (
+        <div className="flex items-center gap-3 text-xs text-gray-600">
+          {node.cpu_cores && <span>{node.cpu_cores} CPU</span>}
+          {node.ram_gb && <span>{node.ram_gb} GB RAM</span>}
+          {node.storage_tb && <span>{node.storage_tb} TB</span>}
+        </div>
+      )}
 
       <button
         onClick={() => onPushMetrics(node)}

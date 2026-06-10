@@ -1,405 +1,360 @@
-import { useState, useEffect, useCallback } from "react";
-import Navbar from "../components/Navbar";
-import useStore from "../store";
-
-const ROWS_PER_PAGE = 20;
+import { useEffect, useState, useCallback } from 'react';
+import useStore from '../store';
+import Navbar from '../components/Navbar';
 
 const OP_STYLES = {
-  INSERT: {
-    badge: "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30",
-    dot: "bg-emerald-400",
-  },
-  UPDATE: {
-    badge: "bg-amber-500/20 text-amber-400 border border-amber-500/30",
-    dot: "bg-amber-400",
-  },
-  DELETE: {
-    badge: "bg-red-500/20 text-red-400 border border-red-500/30",
-    dot: "bg-red-400",
-  },
+  INSERT: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+  UPDATE: 'bg-amber-500/10  text-amber-400  border-amber-500/20',
+  DELETE: 'bg-red-500/10    text-red-400    border-red-500/20',
 };
 
-function Skeleton({ className = "" }) {
-  return (
-    <div className={`animate-pulse bg-slate-700/50 rounded ${className}`} />
-  );
-}
-
-function Badge({ op }) {
-  const style = OP_STYLES[op] || {
-    badge: "bg-slate-700 text-slate-300 border border-slate-600",
-    dot: "bg-slate-400",
-  };
-  return (
-    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-mono font-semibold ${style.badge}`}>
-      <span className={`w-1.5 h-1.5 rounded-full ${style.dot}`} />
-      {op}
-    </span>
-  );
-}
-
-export default function AuditLogPage() {
+export default function AuditLog() {
   const token = useStore(s => s.token);
 
-  const [logs, setLogs] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [logs,     setLogs]     = useState([]);
+  const [total,    setTotal]    = useState(0);
+  const [pages,    setPages]    = useState(1);
+  const [page,     setPage]     = useState(1);
+  const [tables,   setTables]   = useState([]);
+  const [loading,  setLoading]  = useState(true);
+  const [expanded, setExpanded] = useState(null);
 
   const [filters, setFilters] = useState({
-    user: "", table_name: "", operation: "", date_from: "", date_to: "",
+    user: '', table_name: '', operation: '', date_from: '', date_to: '',
   });
-  const [appliedFilters, setAppliedFilters] = useState(filters);
+  const [applied, setApplied] = useState(filters);
 
-  const [page, setPage] = useState(1);
-  const [totalRows, setTotalRows] = useState(0);
+  const setFilter = (k, v) => setFilters(f => ({ ...f, [k]: v }));
 
-  const [users, setUsers] = useState([]);
-  const [tables, setTables] = useState([]);
-
-  const fetchLogs = useCallback(async () => {
+  const fetchLogs = useCallback(async (f = applied, p = page) => {
     setLoading(true);
-    setError(null);
     try {
-      const params = new URLSearchParams({
-        page,
-        limit: ROWS_PER_PAGE,
-        ...(appliedFilters.user        && { user:       appliedFilters.user }),
-        ...(appliedFilters.table_name  && { table_name: appliedFilters.table_name }),
-        ...(appliedFilters.operation   && { operation:  appliedFilters.operation }),
-        ...(appliedFilters.date_from   && { date_from:  appliedFilters.date_from }),
-        ...(appliedFilters.date_to     && { date_to:    appliedFilters.date_to }),
-      });
+      const params = new URLSearchParams({ page: p, limit: 20 });
+      if (f.user)       params.set('user',       f.user);
+      if (f.table_name) params.set('table_name', f.table_name);
+      if (f.operation)  params.set('operation',  f.operation);
+      if (f.date_from)  params.set('date_from',  f.date_from);
+      if (f.date_to)    params.set('date_to',    f.date_to);
 
-      const res = await fetch(`/api/audit-log?${params}`, {
+      const res  = await fetch(`/api/audit-log?${params}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-
-      setLogs(data.logs || []);
-      setTotalRows(data.total || 0);
-      if (data.meta?.users)  setUsers(data.meta.users);
+      setLogs(data.logs   || []);
+      setTotal(data.total || 0);
+      setPages(data.pages || 1);
       if (data.meta?.tables) setTables(data.meta.tables);
-    } catch (err) {
-      setError(err.message);
-      const mock = generateMock();
-      setLogs(mock.slice((page - 1) * ROWS_PER_PAGE, page * ROWS_PER_PAGE));
-      setTotalRows(mock.length);
+    } catch {
+      setLogs([]);
     } finally {
       setLoading(false);
     }
-  }, [page, appliedFilters, token]);
+  }, [token, applied, page]);
 
-  useEffect(() => { fetchLogs(); }, [fetchLogs]);
+  useEffect(() => { fetchLogs(applied, page); }, [page]);   // eslint-disable-line
 
-  const totalPages = Math.max(1, Math.ceil(totalRows / ROWS_PER_PAGE));
-
-  const handleApply = () => { setPage(1); setAppliedFilters({ ...filters }); };
-  const handleReset = () => {
-    const empty = { user: "", table_name: "", operation: "", date_from: "", date_to: "" };
-    setFilters(empty); setAppliedFilters(empty); setPage(1);
+  const applyFilters = () => {
+    setApplied(filters);
+    setPage(1);
+    fetchLogs(filters, 1);
   };
 
-  const activeFilterCount = Object.values(appliedFilters).filter(Boolean).length;
+  const clearFilters = () => {
+    const empty = { user: '', table_name: '', operation: '', date_from: '', date_to: '' };
+    setFilters(empty); setApplied(empty); setPage(1);
+    fetchLogs(empty, 1);
+  };
+
+  const hasFilters = Object.values(applied).some(Boolean);
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
+    <div className="min-h-screen bg-gray-950 text-gray-100">
       <Navbar />
-      <div className="p-6">
+
+      <main className="p-6 max-w-7xl mx-auto">
+
         {/* Header */}
         <div className="mb-6">
-          <div className="flex items-center gap-3 mb-1">
-            <div className="w-8 h-8 rounded-lg bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center">
-              <svg className="w-4 h-4 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-            </div>
-            <h1 className="text-2xl font-semibold tracking-tight">Audit Log</h1>
-          </div>
-          <p className="text-slate-400 text-sm ml-11">
-            Full trail of INSERT, UPDATE, and DELETE operations across all tables.
+          <p className="text-xs font-semibold text-indigo-400 uppercase tracking-widest mb-1">Compliance</p>
+          <h1 className="text-2xl font-bold text-white">Audit Log</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            Track every change — who did what, when, and on which record.
           </p>
         </div>
 
-        {/* Filters */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 mb-4">
-          <div className="flex flex-wrap gap-3">
-            <div className="flex flex-col gap-1 min-w-[160px]">
-              <label className="text-xs text-slate-400 font-medium uppercase tracking-wider">User</label>
-              {users.length > 0 ? (
-                <select value={filters.user} onChange={e => setFilters(f => ({ ...f, user: e.target.value }))}
-                  className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                  <option value="">All users</option>
-                  {users.map(u => <option key={u} value={u}>{u}</option>)}
-                </select>
-              ) : (
-                <input type="text" placeholder="Filter by user…" value={filters.user}
-                  onChange={e => setFilters(f => ({ ...f, user: e.target.value }))}
-                  className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-              )}
+        {/* Filter bar */}
+        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 mb-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 mb-3">
+
+            {/* User search */}
+            <div className="relative lg:col-span-2">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-600 pointer-events-none">
+                <SearchIcon className="w-4 h-4" />
+              </span>
+              <input
+                type="text"
+                value={filters.user}
+                onChange={e => setFilter('user', e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && applyFilters()}
+                placeholder="Search by user email…"
+                className="w-full bg-gray-800 border border-gray-700 rounded-xl pl-9 pr-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/30"
+              />
             </div>
 
-            <div className="flex flex-col gap-1 min-w-[160px]">
-              <label className="text-xs text-slate-400 font-medium uppercase tracking-wider">Table</label>
-              {tables.length > 0 ? (
-                <select value={filters.table_name} onChange={e => setFilters(f => ({ ...f, table_name: e.target.value }))}
-                  className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                  <option value="">All tables</option>
-                  {tables.map(t => <option key={t} value={t}>{t}</option>)}
-                </select>
-              ) : (
-                <input type="text" placeholder="Filter by table…" value={filters.table_name}
-                  onChange={e => setFilters(f => ({ ...f, table_name: e.target.value }))}
-                  className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-              )}
-            </div>
+            {/* Table */}
+            <select
+              value={filters.table_name}
+              onChange={e => setFilter('table_name', e.target.value)}
+              className="bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500/50"
+            >
+              <option value="">All Tables</option>
+              {tables.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
 
-            <div className="flex flex-col gap-1">
-              <label className="text-xs text-slate-400 font-medium uppercase tracking-wider">Operation</label>
-              <select value={filters.operation} onChange={e => setFilters(f => ({ ...f, operation: e.target.value }))}
-                className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                <option value="">All operations</option>
-                <option value="INSERT">INSERT</option>
-                <option value="UPDATE">UPDATE</option>
-                <option value="DELETE">DELETE</option>
-              </select>
-            </div>
+            {/* Operation */}
+            <select
+              value={filters.operation}
+              onChange={e => setFilter('operation', e.target.value)}
+              className="bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500/50"
+            >
+              <option value="">All Operations</option>
+              <option value="INSERT">INSERT</option>
+              <option value="UPDATE">UPDATE</option>
+              <option value="DELETE">DELETE</option>
+            </select>
 
-            <div className="flex flex-col gap-1">
-              <label className="text-xs text-slate-400 font-medium uppercase tracking-wider">From</label>
-              <input type="date" value={filters.date_from}
-                onChange={e => setFilters(f => ({ ...f, date_from: e.target.value }))}
-                className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-            </div>
+            {/* Date from */}
+            <input
+              type="date"
+              value={filters.date_from}
+              onChange={e => setFilter('date_from', e.target.value)}
+              className="bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500/50 [color-scheme:dark]"
+            />
+          </div>
 
-            <div className="flex flex-col gap-1">
-              <label className="text-xs text-slate-400 font-medium uppercase tracking-wider">To</label>
-              <input type="date" value={filters.date_to}
-                onChange={e => setFilters(f => ({ ...f, date_to: e.target.value }))}
-                className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-            </div>
-
-            <div className="flex flex-col gap-1 justify-end">
-              <label className="text-xs text-transparent">-</label>
-              <div className="flex gap-2">
-                <button onClick={handleApply}
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg transition-colors">
-                  Apply
-                </button>
-                {activeFilterCount > 0 && (
-                  <button onClick={handleReset}
-                    className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm font-medium rounded-lg transition-colors">
-                    Clear {activeFilterCount}
-                  </button>
-                )}
-              </div>
-            </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <input
+              type="date"
+              value={filters.date_to}
+              onChange={e => setFilter('date_to', e.target.value)}
+              className="bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500/50 [color-scheme:dark]"
+            />
+            <button
+              onClick={applyFilters}
+              className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold transition-colors"
+            >
+              Search
+            </button>
+            {hasFilters && (
+              <button
+                onClick={clearFilters}
+                className="px-4 py-2 rounded-xl border border-gray-700 text-gray-400 hover:text-white hover:border-gray-500 text-sm transition-colors"
+              >
+                Clear
+              </button>
+            )}
+            <span className="ml-auto text-xs text-gray-500">
+              {total.toLocaleString()} record{total !== 1 ? 's' : ''} found
+            </span>
           </div>
         </div>
 
-        {/* Error Banner */}
-        {error && (
-          <div className="mb-4 px-4 py-3 bg-amber-500/10 border border-amber-500/30 rounded-lg text-amber-400 text-sm flex items-center gap-2">
-            <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
-            API error — showing mock data. ({error})
+        {/* Active filter chips */}
+        {hasFilters && (
+          <div className="flex flex-wrap gap-2 mb-4">
+            {applied.user       && <Chip label={`User: ${applied.user}`}        onRemove={() => { setFilter('user',       ''); applyFilters(); }} />}
+            {applied.table_name && <Chip label={`Table: ${applied.table_name}`} onRemove={() => { setFilter('table_name', ''); applyFilters(); }} />}
+            {applied.operation  && <Chip label={`Op: ${applied.operation}`}     onRemove={() => { setFilter('operation',  ''); applyFilters(); }} />}
+            {applied.date_from  && <Chip label={`From: ${applied.date_from}`}   onRemove={() => { setFilter('date_from',  ''); applyFilters(); }} />}
+            {applied.date_to    && <Chip label={`To: ${applied.date_to}`}       onRemove={() => { setFilter('date_to',    ''); applyFilters(); }} />}
           </div>
         )}
 
         {/* Table */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-800">
-                  {['Time', 'User', 'Table', 'Operation', 'Record ID', 'Changes'].map(h => (
-                    <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {loading
-                  ? Array.from({ length: ROWS_PER_PAGE }).map((_, i) => (
-                      <tr key={i} className="border-b border-slate-800/50 last:border-0">
-                        {Array.from({ length: 6 }).map((_, j) => (
-                          <td key={j} className="px-4 py-3"><Skeleton className="h-4 w-full" /></td>
-                        ))}
-                      </tr>
-                    ))
-                  : logs.map((log, i) => <AuditRow key={log.audit_id ?? i} log={log} />)
-                }
-                {!loading && logs.length === 0 && (
-                  <tr>
-                    <td colSpan={6} className="px-4 py-16 text-center text-slate-500">
-                      No audit records match the current filters.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+        <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
+          <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_40px] gap-4 px-4 py-2.5 border-b border-gray-800 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+            <span>Performed By</span>
+            <span>Table</span>
+            <span>Operation</span>
+            <span>Record</span>
+            <span>When</span>
+            <span />
           </div>
 
-          {/* Pagination */}
-          <div className="border-t border-slate-800 px-4 py-3 flex items-center justify-between">
-            <span className="text-xs text-slate-500">
-              {totalRows === 0
-                ? "No records"
-                : `${(page - 1) * ROWS_PER_PAGE + 1}–${Math.min(page * ROWS_PER_PAGE, totalRows)} of ${totalRows.toLocaleString()} records`}
-            </span>
-            <div className="flex items-center gap-1">
-              <PageBtn onClick={() => setPage(1)}              disabled={page === 1}          label="«" />
-              <PageBtn onClick={() => setPage(p => p - 1)}    disabled={page === 1}          label="‹" />
-              {getPageRange(page, totalPages).map((p, i) =>
-                p === "…"
-                  ? <span key={`e-${i}`} className="px-2 text-slate-600">…</span>
-                  : <PageBtn key={p} onClick={() => setPage(p)} active={p === page} label={p} />
-              )}
-              <PageBtn onClick={() => setPage(p => p + 1)}    disabled={page === totalPages} label="›" />
-              <PageBtn onClick={() => setPage(totalPages)}     disabled={page === totalPages} label="»" />
+          {loading ? (
+            <div className="py-16 flex items-center justify-center">
+              <div className="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
             </div>
-          </div>
+          ) : logs.length === 0 ? (
+            <div className="py-16 text-center">
+              <DocumentIcon className="w-10 h-10 text-gray-700 mx-auto mb-2" />
+              <p className="text-sm text-gray-500">No audit records match your filters.</p>
+            </div>
+          ) : (
+            logs.map(log => (
+              <LogRow
+                key={log.audit_id}
+                log={log}
+                expanded={expanded === log.audit_id}
+                onToggle={() => setExpanded(expanded === log.audit_id ? null : log.audit_id)}
+              />
+            ))
+          )}
         </div>
-      </div>
+
+        {/* Pagination */}
+        {pages > 1 && (
+          <div className="flex items-center justify-between mt-4">
+            <button
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              disabled={page === 1}
+              className="px-4 py-2 rounded-xl border border-gray-700 text-gray-400 hover:text-white hover:border-gray-500 disabled:opacity-30 text-sm transition-colors"
+            >
+              ← Previous
+            </button>
+            <span className="text-xs text-gray-500">Page {page} of {pages}</span>
+            <button
+              onClick={() => setPage(p => Math.min(pages, p + 1))}
+              disabled={page === pages}
+              className="px-4 py-2 rounded-xl border border-gray-700 text-gray-400 hover:text-white hover:border-gray-500 disabled:opacity-30 text-sm transition-colors"
+            >
+              Next →
+            </button>
+          </div>
+        )}
+      </main>
     </div>
   );
 }
 
-function AuditRow({ log }) {
-  const [expanded, setExpanded] = useState(false);
-  const hasChanges = log.old_values || log.new_values;
+// ── LogRow ────────────────────────────────────────────────────────────────────
+function LogRow({ log, expanded, onToggle }) {
+  const opStyle  = OP_STYLES[log.operation] || 'bg-gray-700/30 text-gray-400 border-gray-700';
+  const hasData  = log.old_values || log.new_values;
+  const initials = (log.performed_by || '?')[0].toUpperCase();
 
   return (
     <>
-      <tr
-        className={`border-b border-slate-800/50 last:border-0 hover:bg-slate-800/30 transition-colors ${hasChanges ? "cursor-pointer" : ""}`}
-        onClick={() => hasChanges && setExpanded(e => !e)}
+      <div
+        className={`grid grid-cols-[2fr_1fr_1fr_1fr_1fr_40px] gap-4 px-4 py-3 border-b border-gray-800/50 last:border-0 text-sm items-center transition-colors ${
+          expanded ? 'bg-gray-800/30' : 'hover:bg-gray-800/20'
+        }`}
       >
-        <td className="px-4 py-3 text-slate-300 font-mono text-xs whitespace-nowrap">
-          {formatTs(log.performed_at)}
-        </td>
-        <td className="px-4 py-3 text-slate-200">{log.performed_by ?? "—"}</td>
-        <td className="px-4 py-3">
-          <code className="text-xs text-sky-400 bg-sky-400/10 px-2 py-0.5 rounded">
-            {log.table_name ?? "—"}
-          </code>
-        </td>
-        <td className="px-4 py-3"><Badge op={log.operation} /></td>
-        <td className="px-4 py-3 font-mono text-xs text-slate-400">#{log.record_pk ?? "—"}</td>
-        <td className="px-4 py-3">
-          {hasChanges ? (
-            <button className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1 transition-colors">
-              <svg className={`w-3 h-3 transition-transform ${expanded ? "rotate-90" : ""}`}
-                fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-              View diff
-            </button>
-          ) : (
-            <span className="text-slate-600 text-xs">—</span>
+        {/* User */}
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="w-7 h-7 rounded-lg bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center shrink-0">
+            <span className="text-[10px] font-bold text-indigo-400">{initials}</span>
+          </div>
+          <span className="text-gray-200 truncate text-xs font-medium">{log.performed_by}</span>
+        </div>
+
+        {/* Table */}
+        <span className="text-gray-400 text-xs font-mono truncate">{log.table_name}</span>
+
+        {/* Operation */}
+        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border w-fit ${opStyle}`}>
+          {log.operation}
+        </span>
+
+        {/* Record PK */}
+        <span className="text-gray-500 text-xs font-mono">#{log.record_pk}</span>
+
+        {/* When */}
+        <span className="text-gray-500 text-xs" title={new Date(log.performed_at).toLocaleString()}>
+          {relativeTime(log.performed_at)}
+        </span>
+
+        {/* Expand toggle */}
+        <button
+          onClick={onToggle}
+          disabled={!hasData}
+          className="text-gray-600 hover:text-gray-300 disabled:opacity-20 transition-colors justify-self-center"
+          title={hasData ? 'View changes' : 'No change data'}
+        >
+          <ChevronIcon className={`w-4 h-4 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+        </button>
+      </div>
+
+      {/* Diff panel */}
+      {expanded && hasData && (
+        <div className="px-4 py-3 bg-gray-800/20 border-b border-gray-800/50 grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {log.old_values && (
+            <div>
+              <p className="text-[10px] font-semibold text-red-400 uppercase tracking-wide mb-1.5">Before</p>
+              <pre className="text-xs text-gray-400 bg-gray-900 rounded-xl p-3 overflow-x-auto border border-gray-800 leading-relaxed">
+                {JSON.stringify(log.old_values, null, 2)}
+              </pre>
+            </div>
           )}
-        </td>
-      </tr>
-      {expanded && hasChanges && (
-        <tr className="border-b border-slate-800/50 bg-slate-900/80">
-          <td colSpan={6} className="px-4 py-3">
-            <DiffView oldValues={log.old_values} newValues={log.new_values} />
-          </td>
-        </tr>
+          {log.new_values && (
+            <div>
+              <p className="text-[10px] font-semibold text-emerald-400 uppercase tracking-wide mb-1.5">After</p>
+              <pre className="text-xs text-gray-400 bg-gray-900 rounded-xl p-3 overflow-x-auto border border-gray-800 leading-relaxed">
+                {JSON.stringify(log.new_values, null, 2)}
+              </pre>
+            </div>
+          )}
+          {log.ip_address && (
+            <p className="text-[11px] text-gray-600 sm:col-span-2">
+              IP: <span className="text-gray-500 font-mono">{log.ip_address}</span>
+            </p>
+          )}
+        </div>
       )}
     </>
   );
 }
 
-function DiffView({ oldValues, newValues }) {
-  const parseJ = v => {
-    if (!v) return {};
-    if (typeof v === "object") return v;
-    try { return JSON.parse(v); } catch { return { raw: v }; }
-  };
-  const oldObj = parseJ(oldValues);
-  const newObj = parseJ(newValues);
-  const keys = [...new Set([...Object.keys(oldObj), ...Object.keys(newObj)])];
-  if (!keys.length) return null;
-
+// ── Chip ──────────────────────────────────────────────────────────────────────
+function Chip({ label, onRemove }) {
   return (
-    <div className="rounded-lg overflow-hidden border border-slate-700/50 text-xs font-mono">
-      <div className="grid grid-cols-2 divide-x divide-slate-700/50">
-        <div>
-          <div className="px-3 py-1.5 bg-red-500/10 text-red-400 font-semibold text-[10px] uppercase tracking-wider border-b border-slate-700/50">Before</div>
-          {keys.map(k => (
-            <div key={k} className="flex px-3 py-1.5 border-b border-slate-800/50 last:border-0">
-              <span className="text-slate-500 w-28 shrink-0">{k}</span>
-              <span className={oldObj[k] !== newObj[k] ? "text-red-300" : "text-slate-400"}>
-                {oldObj[k] != null ? String(oldObj[k]) : <em className="text-slate-600">null</em>}
-              </span>
-            </div>
-          ))}
-        </div>
-        <div>
-          <div className="px-3 py-1.5 bg-emerald-500/10 text-emerald-400 font-semibold text-[10px] uppercase tracking-wider border-b border-slate-700/50">After</div>
-          {keys.map(k => (
-            <div key={k} className="flex px-3 py-1.5 border-b border-slate-800/50 last:border-0">
-              <span className="text-slate-500 w-28 shrink-0">{k}</span>
-              <span className={oldObj[k] !== newObj[k] ? "text-emerald-300" : "text-slate-400"}>
-                {newObj[k] != null ? String(newObj[k]) : <em className="text-slate-600">null</em>}
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function PageBtn({ onClick, disabled, active, label }) {
-  return (
-    <button onClick={onClick} disabled={disabled}
-      className={`min-w-[32px] h-8 px-2 rounded text-sm font-medium transition-colors
-        ${active    ? "bg-indigo-600 text-white"
-        : disabled  ? "text-slate-700 cursor-not-allowed"
-                    : "text-slate-400 hover:bg-slate-700 hover:text-slate-200"}`}>
+    <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-xs text-indigo-300">
       {label}
-    </button>
+      <button onClick={onRemove} className="text-indigo-400 hover:text-white transition-colors">
+        <XIcon className="w-3 h-3" />
+      </button>
+    </span>
   );
 }
 
-function getPageRange(current, total) {
-  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
-  if (current <= 4) return [1, 2, 3, 4, 5, "…", total];
-  if (current >= total - 3) return [1, "…", total - 4, total - 3, total - 2, total - 1, total];
-  return [1, "…", current - 1, current, current + 1, "…", total];
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function relativeTime(ts) {
+  const diff = (Date.now() - new Date(ts).getTime()) / 1000;
+  if (diff < 60)     return 'just now';
+  if (diff < 3600)   return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400)  return `${Math.floor(diff / 3600)}h ago`;
+  if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
+  return new Date(ts).toLocaleDateString();
 }
 
-function formatTs(ts) {
-  if (!ts) return "—";
-  const d = new Date(ts);
-  if (isNaN(d)) return ts;
+// ── Icons ─────────────────────────────────────────────────────────────────────
+function SearchIcon({ className }) {
   return (
-    d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) +
-    " " +
-    d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+    </svg>
   );
 }
-
-function generateMock() {
-  const ops = ["INSERT", "UPDATE", "DELETE"];
-  const tables = ["nodes", "incidents", "users", "slas", "config_snapshots", "alerts"];
-  const users = ["admin@infralock.dev", "aakash@infralock.dev", "ops@infralock.dev"];
-  return Array.from({ length: 120 }, (_, i) => {
-    const op = ops[i % 3];
-    return {
-      audit_id: i + 1,
-      performed_at: new Date(Date.now() - i * 1_800_000).toISOString(),
-      performed_by: users[i % users.length],
-      table_name: tables[i % tables.length],
-      operation: op,
-      record_pk: 1000 + i,
-      old_values: op !== "INSERT" ? JSON.stringify({ status: "active", updated_at: "2025-01-01" }) : null,
-      new_values: op !== "DELETE" ? JSON.stringify({ status: "inactive", updated_at: new Date().toISOString() }) : null,
-    };
-  });
+function ChevronIcon({ className }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+    </svg>
+  );
+}
+function DocumentIcon({ className }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+    </svg>
+  );
+}
+function XIcon({ className }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+    </svg>
+  );
 }

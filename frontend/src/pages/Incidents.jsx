@@ -10,10 +10,10 @@ const STATUS_STYLES = {
 };
 
 const SEVERITY_STYLES = {
-  critical: 'bg-red-500/10 text-red-400 border-red-500/20',
-  high:     'bg-orange-500/10 text-orange-400 border-orange-500/20',
-  medium:   'bg-amber-500/10 text-amber-400 border-amber-500/20',
-  low:      'bg-sky-500/10 text-sky-400 border-sky-500/20',
+  P1: 'bg-red-500/10 text-red-400 border-red-500/20',
+  P2: 'bg-orange-500/10 text-orange-400 border-orange-500/20',
+  P3: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
+  P4: 'bg-sky-500/10 text-sky-400 border-sky-500/20',
 };
 
 const COLUMNS = ['open', 'investigating', 'resolved', 'closed'];
@@ -21,7 +21,7 @@ const COLUMNS = ['open', 'investigating', 'resolved', 'closed'];
 const EMPTY_FORM = {
   title: '',
   description: '',
-  severity: 'medium',
+  severity: 'P3',
   status: 'open',
 };
 
@@ -200,10 +200,10 @@ export default function Incidents() {
                     onChange={e => setForm(f => ({ ...f, severity: e.target.value }))}
                     className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-red-500/50"
                   >
-                    <option value="critical">critical</option>
-                    <option value="high">High</option>
-                    <option value="medium">Medium</option>
-                    <option value="low">Low</option>
+                    <option value="P1">P1</option>
+                    <option value="P2">P2</option>
+                    <option value="P3">P3</option>
+                    <option value="P4">P4</option>
                   </select>
                 </div>
                 <div>
